@@ -368,6 +368,7 @@ export function isCheck(pieces: Piece[], color: PieceColor): boolean {
   const general = pieces.find(p => p.type === PieceType.GENERAL && p.color === color);
   if (!general) return false;
   
+  // 检查是否有敌方棋子可以攻击到将/帅
   return pieces.some(piece => 
     piece.color !== color && 
     getValidMoves(piece, pieces).some(move => 
@@ -386,14 +387,21 @@ export function isCheckmate(pieces: Piece[], color: PieceColor): boolean {
   for (const piece of colorPieces) {
     const validMoves = getValidMoves(piece, pieces);
     for (const move of validMoves) {
-      const newPieces = executeMove({ from: piece.position, to: move, piece }, pieces);
+      // 创建临时移动对象
+      const tempMove = { 
+        from: piece.position, 
+        to: move, 
+        piece: piece 
+      };
+      
+      const newPieces = executeMove(tempMove, pieces);
       if (!isCheck(newPieces, color)) {
-        return false;
+        return false; // 找到了可以解除将军的移动
       }
     }
   }
   
-  return true;
+  return true; // 没有找到可以解除将军的移动
 }
 
 // 检查是否和棋（无子可动）
@@ -415,17 +423,49 @@ export function isStalemate(pieces: Piece[], color: PieceColor): boolean {
 
 // 获取游戏状态
 export function getGameStatus(pieces: Piece[], currentTurn: PieceColor): GameStatus {
-  if (isCheckmate(pieces, currentTurn)) {
-    return GameStatus.CHECKMATE;
+  // 检查当前回合方是否被将军
+  if (isCheck(pieces, currentTurn)) {
+    // 如果被将军，检查是否将死
+    if (isCheckmate(pieces, currentTurn)) {
+      return GameStatus.CHECKMATE;
+    }
+    return GameStatus.CHECK;
   }
   
+  // 检查是否和棋（无子可动）
   if (isStalemate(pieces, currentTurn)) {
     return GameStatus.STALEMATE;
   }
   
-  if (isCheck(pieces, currentTurn)) {
-    return GameStatus.CHECK;
+  return GameStatus.PLAYING;
+}
+
+// 调试函数：检查特定位置的将军状态
+export function debugCheckStatus(pieces: Piece[], color: PieceColor): string[] {
+  const debugInfo: string[] = [];
+  const general = pieces.find(p => p.type === PieceType.GENERAL && p.color === color);
+  
+  if (!general) {
+    debugInfo.push(`找不到${color === PieceColor.RED ? '红' : '黑'}方将/帅`);
+    return debugInfo;
   }
   
-  return GameStatus.PLAYING;
+  debugInfo.push(`${color === PieceColor.RED ? '红' : '黑'}方将/帅位置: (${general.position.x}, ${general.position.y})`);
+  
+  // 检查每个敌方棋子的移动
+  pieces.forEach(piece => {
+    if (piece.color !== color) {
+      const moves = getValidMoves(piece, pieces);
+      const canAttack = moves.some(move => 
+        move.x === general.position.x && move.y === general.position.y
+      );
+      
+      if (canAttack) {
+        debugInfo.push(`${piece.type}(${piece.color === PieceColor.RED ? '红' : '黑'}) 在位置(${piece.position.x}, ${piece.position.y}) 可以攻击将/帅`);
+        debugInfo.push(`  该棋子的所有移动: ${moves.map(m => `(${m.x},${m.y})`).join(', ')}`);
+      }
+    }
+  });
+  
+  return debugInfo;
 } 

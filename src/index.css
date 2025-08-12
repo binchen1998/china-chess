@@ -54,9 +54,10 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 200px; /* 棋盘最小宽度 */
   overflow: hidden; /* 防止内容溢出 */
+  padding-top: 20px;
 }
 
 /* 棋盘容器 - 响应式缩放 */
@@ -71,6 +72,7 @@ body {
   max-height: 100%;
   width: auto;
   height: auto;
+  display: block; /* 确保SVG没有额外的空间 */
 }
 
 /* 游戏头部样式 */
@@ -213,6 +215,27 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   text-align: center;
+  transition: all 0.3s ease;
+}
+
+.status-display.check {
+  background: rgba(255, 193, 7, 0.2);
+  border: 2px solid #ffc107;
+  color: #ffc107;
+  animation: pulse 2s infinite;
+}
+
+.status-display.checkmate {
+  background: rgba(220, 53, 69, 0.2);
+  border: 2px solid #dc3545;
+  color: #dc3545;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 .game-mode {
@@ -257,10 +280,11 @@ body {
 .game-board {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  padding-top: 0;
 }
 
 /* 难度选择对话框 */
@@ -292,6 +316,75 @@ body {
   margin-bottom: 20px;
   color: #333;
   font-size: 24px;
+}
+
+/* 游戏结束弹窗样式 */
+.game-over-dialog {
+  background: white;
+  padding: 30px;
+  border-radius: 16px;
+  max-width: 500px;
+  width: 90%;
+  text-align: center;
+  position: relative;
+}
+
+/* 右上角关闭按钮 */
+.dialog-close-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f0f0f0;
+  border-radius: 50%;
+  color: #666;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.dialog-close-btn:hover {
+  background: #e0e0e0;
+  color: #333;
+  transform: scale(1.1);
+}
+
+.dialog-close-btn:active {
+  transform: scale(0.95);
+}
+
+.game-over-dialog h3 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 24px;
+}
+
+.game-over-message {
+  font-size: 18px;
+  color: #333;
+  margin-bottom: 25px;
+  padding: 15px;
+  background: #f8f9ff;
+  border-radius: 8px;
+  border: 2px solid #667eea;
+}
+
+.game-over-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.game-over-actions .btn {
+  min-width: 120px;
 }
 
 .difficulty-options {
@@ -338,6 +431,10 @@ body {
     max-width: 280px;
   }
   
+  .game-center-panel {
+    padding-top: 15px;
+  }
+  
   .game-header h1 {
     font-size: 24px;
   }
@@ -363,6 +460,7 @@ body {
   
   .game-center-panel {
     min-width: 150px;
+    padding-top: 10px;
   }
   
   .game-header h1 {
@@ -405,6 +503,7 @@ body {
   
   .game-center-panel {
     min-width: 120px;
+    padding-top: 8px;
   }
   
   .game-header h1 {
@@ -449,6 +548,7 @@ body {
   
   .game-center-panel {
     min-width: 80px;
+    padding-top: 5px;
   }
   
   .game-header h1 {
@@ -504,6 +604,8 @@ body {
   }
 }
 
+
+
 /* 超宽屏幕优化 */
 @media (min-width: 1440px) {
   .game-container {
@@ -516,6 +618,10 @@ body {
     width: 350px;
     min-width: 350px;
     max-width: 350px;
+  }
+  
+  .game-center-panel {
+    padding-top: 30px;
   }
   
   .game-header h1 {

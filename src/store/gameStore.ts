@@ -18,6 +18,7 @@ interface GameStore {
   makeMove: (from: Position, to: Position) => boolean;
   selectPiece: (piece: Piece | null) => void;
   resetGame: () => void;
+  forceUpdateStatus: () => void;
   
   // AI相关
   makeAIMove: () => Promise<void>;
@@ -89,7 +90,7 @@ function createGameHistory(): GameHistory {
 function createDefaultConfig(): GameConfig {
   return {
     mode: GameMode.HUMAN_VS_AI,
-            difficulty: DifficultyLevel.INTERMEDIATE_ADVANCED,
+    difficulty: DifficultyLevel.NOVICE,
     timeLimit: 300
   };
 }
@@ -106,10 +107,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // 游戏控制
   startNewGame: (config: GameConfig) => {
+    const initialPieces = createInitialBoard();
+    const initialStatus = getGameStatus(initialPieces, PieceColor.RED);
+    
     set({
-      pieces: createInitialBoard(),
+      pieces: initialPieces,
       currentTurn: PieceColor.RED,
-      status: GameStatus.PLAYING,
+      status: initialStatus,
       selectedPiece: null,
       validMoves: [],
       history: createGameHistory(),
@@ -182,14 +186,49 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
+    const initialPieces = createInitialBoard();
+    const initialStatus = getGameStatus(initialPieces, PieceColor.RED);
+    
     set({
-      pieces: createInitialBoard(),
+      pieces: initialPieces,
       currentTurn: PieceColor.RED,
-      status: GameStatus.PLAYING,
+      status: initialStatus,
       selectedPiece: null,
       validMoves: [],
       history: createGameHistory()
     });
+  },
+
+  // 强制更新游戏状态
+  forceUpdateStatus: () => {
+    const { pieces, currentTurn } = get();
+    
+    // 检查当前回合方是否被将死
+    const currentPlayerStatus = getGameStatus(pieces, currentTurn);
+    
+    // 如果当前玩家被将死，更新状态
+    if (currentPlayerStatus === GameStatus.CHECKMATE) {
+      console.log('强制更新游戏状态: 检测到将死 -> CHECKMATE');
+      set({ status: GameStatus.CHECKMATE });
+      return;
+    }
+    
+    // 检查对方是否被将死
+    const oppositeColor = currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
+    const oppositeStatus = getGameStatus(pieces, oppositeColor);
+    
+    if (oppositeStatus === GameStatus.CHECKMATE) {
+      console.log('强制更新游戏状态: 检测到对方将死 -> CHECKMATE');
+      set({ status: GameStatus.CHECKMATE });
+      return;
+    }
+    
+    // 检查其他状态
+    const newStatus = getGameStatus(pieces, currentTurn);
+    if (newStatus !== get().status) {
+      console.log('强制更新游戏状态:', get().status, '->', newStatus);
+      set({ status: newStatus });
+    }
   },
 
   // AI相关
@@ -198,7 +237,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     if (status !== GameStatus.PLAYING || 
         config.mode !== GameMode.HUMAN_VS_AI || 
-        currentTurn === PieceColor.RED) {
+        currentTurn !== PieceColor.BLACK) {
       return;
     }
 
@@ -213,10 +252,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
       );
       
       if (pieceToMove) {
-        // 先选中棋子
-        set({ selectedPiece: pieceToMove });
-        // 然后执行移动
-        get().makeMove(evaluation.bestMove!.from, evaluation.bestMove!.to);
+        // 直接执行AI移动，不需要先选中
+        const capturedPiece = pieces.find(p => 
+          p.position.x === evaluation.bestMove!.to.x && 
+          p.position.y === evaluation.bestMove!.to.y
+        );
+        
+        const move: Move = {
+          from: evaluation.bestMove!.from,
+          to: evaluation.bestMove!.to,
+          piece: pieceToMove,
+          captured: capturedPiece || undefined
+        };
+
+        const newPieces = executeMove(move, pieces);
+        const newStatus = getGameStatus(newPieces, currentTurn);
+        const nextTurn = PieceColor.RED; // AI走子后，轮到红方
+
+        // 更新历史
+        const newHistory = { ...get().history };
+        newHistory.moves.push(move);
+        if (newStatus !== GameStatus.PLAYING) {
+          newHistory.endTime = new Date();
+          newHistory.status = newStatus;
+          newHistory.winner = newStatus === GameStatus.CHECKMATE ? nextTurn : undefined;
+        }
+
+        set({
+          pieces: newPieces,
+          currentTurn: nextTurn,
+          status: newStatus,
+          selectedPiece: null,
+          validMoves: [],
+          history: newHistory
+        });
       }
     }
   },

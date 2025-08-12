@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { PieceColor, GameStatus, DifficultyLevel, GameMode } from '../types';
+import { PieceColor, GameStatus, DifficultyLevel, GameMode, PieceType } from '../types';
 import Board from './Board';
 import Piece from './Piece';
 import { BOARD_MARGIN, MIN_CELL_SIZE, MAX_CELL_SIZE, DEFAULT_CELL_SIZE } from '../constants/board';
+import { getValidMoves, debugCheckStatus, getGameStatus } from '../engine/rules';
 
 const Game: React.FC = () => {
   const {
@@ -13,18 +14,21 @@ const Game: React.FC = () => {
     selectedPiece,
     validMoves,
     config,
+    history,
     selectPiece,
     makeMove,
     makeAIMove,
     startNewGame,
     resetGame,
     setDifficulty,
-    setGameMode
+    setGameMode,
+    forceUpdateStatus
   } = useGameStore();
 
   // 状态管理
   const [showDifficultyDialog, setShowDifficultyDialog] = useState(false);
   const [boardCellSize, setBoardCellSize] = useState(DEFAULT_CELL_SIZE);
+  const [showGameOverDialog, setShowGameOverDialog] = useState(false);
 
   // 当轮到AI时自动走子
   useEffect(() => {
@@ -36,6 +40,34 @@ const Game: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [currentTurn, config.mode, status]);
+
+  // 监听游戏状态变化，显示游戏结束弹窗
+  useEffect(() => {
+    if (status === GameStatus.CHECKMATE || status === GameStatus.STALEMATE || status === GameStatus.DRAW) {
+      setShowGameOverDialog(true);
+    }
+  }, [status]);
+
+  // 自动检查游戏状态，确保将死状态能及时显示
+  useEffect(() => {
+    // 检查当前回合方是否被将死
+    const currentPlayerStatus = getGameStatus(pieces, currentTurn);
+    
+    // 如果当前玩家被将死，但游戏状态还没有更新，强制更新
+    if (currentPlayerStatus === GameStatus.CHECKMATE && status !== GameStatus.CHECKMATE) {
+      console.log('检测到将死状态，自动更新游戏状态');
+      forceUpdateStatus();
+    }
+    
+    // 也检查对方是否被将死（比如红方走子后，检查黑方是否被将死）
+    const oppositeColor = currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
+    const oppositeStatus = getGameStatus(pieces, oppositeColor);
+    
+    if (oppositeStatus === GameStatus.CHECKMATE && status !== GameStatus.CHECKMATE) {
+      console.log('检测到对方将死状态，自动更新游戏状态');
+      forceUpdateStatus();
+    }
+  }, [pieces, currentTurn, status, forceUpdateStatus]);
 
   // 处理棋子点击
   const handlePieceClick = (piece: any) => {
@@ -199,7 +231,7 @@ const Game: React.FC = () => {
       <div className="game-right-panel">
         {/* 游戏信息 */}
         <div className="game-info">
-          <div className="status-display">
+          <div className={`status-display ${status === GameStatus.CHECK ? 'check' : ''} ${status === GameStatus.CHECKMATE ? 'checkmate' : ''}`}>
             {getStatusText()}
           </div>
           
@@ -224,7 +256,63 @@ const Game: React.FC = () => {
             <strong>黑方棋子:</strong> {pieces.filter(p => p.color === PieceColor.BLACK).length}
           </div>
           <div className="stat-item">
-            <strong>已走步数:</strong> {pieces.length === 32 ? 0 : Math.floor((32 - pieces.length) / 2)}
+            <strong>已走步数:</strong> {history.moves.length}
+          </div>
+        </div>
+
+        {/* 调试信息 */}
+        <div className="debug-info" style={{ marginTop: '20px', padding: '15px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '8px', fontSize: '12px' }}>
+          <div><strong>调试信息:</strong></div>
+          <div>当前状态: {status}</div>
+          <div>当前回合: {currentTurn === PieceColor.RED ? '红方' : '黑方'}</div>
+          <div>红方将军: {pieces.some(p => p.color === PieceColor.BLACK && getValidMoves(p, pieces).some(move => {
+            const redGeneral = pieces.find(g => g.type === PieceType.GENERAL && g.color === PieceColor.RED);
+            return redGeneral && move.x === redGeneral.position.x && move.y === redGeneral.position.y;
+          })) ? '是' : '否'}</div>
+          <div>黑方将军: {pieces.some(p => p.color === PieceColor.RED && getValidMoves(p, pieces).some(move => {
+            const blackGeneral = pieces.find(g => g.type === PieceType.GENERAL && g.color === PieceColor.BLACK);
+            return blackGeneral && move.x === blackGeneral.position.x && move.y === blackGeneral.position.y;
+          })) ? '是' : '否'}</div>
+          
+          {/* 强制状态检查 */}
+          <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '10px' }}>
+            <div><strong>强制状态检查:</strong></div>
+            <div>红方状态: {getGameStatus(pieces, PieceColor.RED)}</div>
+            <div>黑方状态: {getGameStatus(pieces, PieceColor.BLACK)}</div>
+            <button 
+              onClick={() => {
+                const blackStatus = getGameStatus(pieces, PieceColor.BLACK);
+                if (blackStatus === GameStatus.CHECKMATE) {
+                  console.log('黑方被将死，强制更新游戏状态');
+                  forceUpdateStatus();
+                }
+              }}
+              style={{ 
+                padding: '5px 10px', 
+                margin: '5px', 
+                fontSize: '10px',
+                background: 'rgba(255,255,255,0.2)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                color: 'white',
+                cursor: 'pointer'
+              }}
+            >
+              检查黑方状态
+            </button>
+          </div>
+          
+          {/* 详细将军信息 */}
+          <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '10px' }}>
+            <div><strong>详细将军信息:</strong></div>
+            <div>红方将军详情:</div>
+            {debugCheckStatus(pieces, PieceColor.RED).map((info, index) => (
+              <div key={index} style={{ fontSize: '10px', marginLeft: '10px' }}>{info}</div>
+            ))}
+            <div>黑方将军详情:</div>
+            {debugCheckStatus(pieces, PieceColor.BLACK).map((info, index) => (
+              <div key={index} style={{ fontSize: '10px', marginLeft: '10px' }}>{info}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -253,6 +341,104 @@ const Game: React.FC = () => {
             >
               取消
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 游戏结束弹窗 */}
+      {showGameOverDialog && (
+        <div className="dialog-overlay">
+          <div className="game-over-dialog">
+            {/* 右上角关闭按钮 */}
+            <button 
+              className="dialog-close-btn"
+              onClick={() => setShowGameOverDialog(false)}
+              title="关闭弹窗，保留棋盘学习"
+            >
+              ✕
+            </button>
+            
+            {/* 胜负图标和标题 */}
+            <div className="game-over-header">
+              {status === GameStatus.CHECKMATE ? (
+                <>
+                  <div className="winner-icon">🏆</div>
+                  <h3>恭喜获胜！</h3>
+                </>
+              ) : status === GameStatus.STALEMATE ? (
+                <>
+                  <div className="draw-icon">🤝</div>
+                  <h3>和棋！</h3>
+                </>
+              ) : (
+                <>
+                  <div className="game-over-icon">🎯</div>
+                  <h3>游戏结束</h3>
+                </>
+              )}
+            </div>
+            
+            {/* 胜负详细说明 */}
+            <div className="game-over-details">
+              {status === GameStatus.CHECKMATE ? (
+                <div className="winner-announcement">
+                  <div className="winner-text">
+                    <span className="winner-color">
+                      {currentTurn === PieceColor.RED ? '黑方' : '红方'}
+                    </span>
+                    <span className="winner-label">获胜！</span>
+                  </div>
+                  <div className="loser-text">
+                    <span className="loser-color">
+                      {currentTurn === PieceColor.RED ? '红方' : '黑方'}
+                    </span>
+                    <span className="loser-label">被将死</span>
+                  </div>
+                </div>
+              ) : status === GameStatus.STALEMATE ? (
+                <div className="stalemate-announcement">
+                  <div className="stalemate-text">
+                    双方都无法移动，形成和棋
+                  </div>
+                </div>
+              ) : (
+                <div className="game-over-message">
+                  {getStatusText()}
+                </div>
+              )}
+            </div>
+            
+            {/* 操作按钮 */}
+            <div className="game-over-actions">
+              <button 
+                className="btn primary"
+                onClick={() => {
+                  setShowGameOverDialog(false);
+                  startNewGame(config);
+                }}
+              >
+                🎮 新游戏
+              </button>
+              <button 
+                className="btn secondary"
+                onClick={() => {
+                  setShowGameOverDialog(false);
+                  resetGame();
+                }}
+              >
+                🔄 重新开始
+              </button>
+            </div>
+            
+            {/* 提示信息 */}
+            <div className="dialog-tip" style={{ 
+              marginTop: '15px', 
+              fontSize: '12px', 
+              color: '#666', 
+              fontStyle: 'italic' 
+            }}>
+              提示：点击右上角 ✕ 按钮可以关闭弹窗，保留当前棋盘供学习研究
+            </div>
           </div>
         </div>
       )}
