@@ -118,13 +118,15 @@ const Board: React.FC<BoardProps> = ({ children, cellSize = 60 }) => {
   const generateRiverMarkings = () => {
     const actualBoardWidth = 8 * cellSize; // 实际棋盘宽度（8列）
     const centerX = margin + actualBoardWidth / 2; // 中心位置
+    const fontSize = Math.max(12, cellSize * 0.3); // 根据格子大小动态调整字体大小
+    
     return (
       <g key="river-markings">
         {/* 楚河 - 第4-5行之间 */}
         <text
-          x={centerX - 30}
-          y={margin + 4.5 * cellSize + 5}
-          fontSize="20"
+          x={centerX - fontSize * 1.5}
+          y={margin + 4.5 * cellSize + fontSize * 0.3}
+          fontSize={fontSize}
           fill={BOARD_COLORS.GRID_LINE}
           fontWeight="bold"
           textAnchor="middle"
@@ -133,9 +135,9 @@ const Board: React.FC<BoardProps> = ({ children, cellSize = 60 }) => {
         </text>
         {/* 汉界 - 第4-5行之间 */}
         <text
-          x={centerX + 30}
-          y={margin + 4.5 * cellSize + 5}
-          fontSize="20"
+          x={centerX + fontSize * 1.5}
+          y={margin + 4.5 * cellSize + fontSize * 0.3}
+          fontSize={fontSize}
           fill={BOARD_COLORS.GRID_LINE}
           fontWeight="bold"
           textAnchor="middle"
@@ -170,7 +172,7 @@ const Board: React.FC<BoardProps> = ({ children, cellSize = 60 }) => {
     soldierPositions.forEach(pos => {
       const x = margin + pos.x * cellSize;
       const y = margin + pos.y * cellSize;
-      const size = Math.max(4, cellSize * 0.07); // 根据格子大小动态调整标记大小
+      const size = Math.max(3, cellSize * 0.05); // 根据格子大小动态调整标记大小
       
       markings.push(
         <g key={`soldier-${pos.x}-${pos.y}`}>
@@ -184,7 +186,7 @@ const Board: React.FC<BoardProps> = ({ children, cellSize = 60 }) => {
     cannonPositions.forEach(pos => {
       const x = margin + pos.x * cellSize;
       const y = margin + pos.y * cellSize;
-      const size = Math.max(6, cellSize * 0.1); // 根据格子大小动态调整标记大小
+      const size = Math.max(4, cellSize * 0.07); // 根据格子大小动态调整标记大小
       
       markings.push(
         <g key={`cannon-${pos.x}-${pos.y}`}>
@@ -203,11 +205,14 @@ const Board: React.FC<BoardProps> = ({ children, cellSize = 60 }) => {
         width={actualBoardWidth}
         height={actualBoardHeight}
         viewBox={`0 0 ${actualBoardWidth} ${actualBoardHeight}`}
+        preserveAspectRatio="xMidYMid meet"
         style={{ 
           backgroundColor: BOARD_COLORS.BACKGROUND,
           border: `3px solid ${BOARD_COLORS.BORDER}`,
           borderRadius: '8px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          maxWidth: '100%',
+          maxHeight: '100%'
         }}
       >
         {/* 棋盘背景 */}
