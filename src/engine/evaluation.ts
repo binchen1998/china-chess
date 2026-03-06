@@ -1,4 +1,4 @@
-import { Piece, PieceColor, DifficultyLevel } from '../types';
+import { Piece, PieceColor, PieceType, DifficultyLevel } from '../types';
 import { PIECE_VALUES } from './rules';
 
 // 中心控制价值
@@ -71,6 +71,18 @@ function advancedEvaluation(pieces: Piece[], currentTurn: PieceColor): number {
 // 专家级评估函数
 function expertEvaluation(pieces: Piece[], currentTurn: PieceColor): number {
   let score = advancedEvaluation(pieces, currentTurn);
+  
+  // 添加更复杂的战术评估
+  score += getTacticalValue(pieces, currentTurn);
+  
+  // 添加子力协调性评估
+  score += getCoordinationValue(pieces, currentTurn);
+  
+  // 添加王的安全评估
+  score += getKingSafetyValue(pieces, currentTurn);
+  
+  // 添加线路控制评估
+  score += getLineControlValue(pieces, currentTurn);
   
   return score;
 }
@@ -154,11 +166,11 @@ export function getSearchDepth(difficulty: DifficultyLevel): number {
     case DifficultyLevel.EXPERT:
       return 8;
     case DifficultyLevel.MASTER:
-      return 10;
-    case DifficultyLevel.GRANDMASTER:
       return 12;
+    case DifficultyLevel.GRANDMASTER:
+      return 16;
     case DifficultyLevel.INTERNATIONAL_MASTER:
-      return 15;
+      return 20;
     default:
       return 4;
   }
@@ -182,8 +194,133 @@ export function getTimeLimit(difficulty: DifficultyLevel): number {
     case DifficultyLevel.GRANDMASTER:
       return 8000; // 8秒
     case DifficultyLevel.INTERNATIONAL_MASTER:
-      return 12000; // 12秒
+      return 30000; // 30秒
     default:
       return 2000; // 2秒
   }
-} 
+}
+
+// 战术价值评估
+function getTacticalValue(pieces: Piece[], currentTurn: PieceColor): number {
+  let score = 0;
+  
+  for (const piece of pieces) {
+    if (piece.color === currentTurn) {
+      // 检查是否有威胁
+      if (hasThreat(piece, pieces)) {
+        score += 15;
+      }
+      
+      // 检查是否被保护
+      if (isProtected(piece, pieces)) {
+        score += 10;
+      }
+    }
+  }
+  
+  return score;
+}
+
+// 子力协调性评估
+function getCoordinationValue(pieces: Piece[], currentTurn: PieceColor): number {
+  let score = 0;
+  
+  // 检查车炮配合
+  score += getChariotCannonCoordination(pieces, currentTurn);
+  
+  // 检查马象配合
+  score += getHorseElephantCoordination(pieces, currentTurn);
+  
+  return score;
+}
+
+// 王的安全评估
+function getKingSafetyValue(pieces: Piece[], currentTurn: PieceColor): number {
+  let score = 0;
+  
+  const king = pieces.find(p => p.type === PieceType.GENERAL && p.color === currentTurn);
+  if (king) {
+    // 检查王周围的保护
+    const protectors = pieces.filter(p => 
+      p.color === currentTurn && 
+      Math.abs(p.position.x - king.position.x) <= 1 && 
+      Math.abs(p.position.y - king.position.y) <= 1
+    );
+    score += protectors.length * 8;
+  }
+  
+  return score;
+}
+
+// 线路控制评估
+function getLineControlValue(pieces: Piece[], currentTurn: PieceColor): number {
+  let score = 0;
+  
+  // 检查开放线控制
+  for (let x = 0; x <= 8; x++) {
+    const lineControl = getLineControl(pieces, x, currentTurn);
+    score += lineControl * 5;
+  }
+  
+  return score;
+}
+
+// 辅助函数
+function hasThreat(piece: Piece, pieces: Piece[]): boolean {
+  // 简化实现：检查是否有敌方棋子可以攻击这个位置
+  return pieces.some(p => 
+    p.color !== piece.color && 
+    Math.abs(p.position.x - piece.position.x) + Math.abs(p.position.y - piece.position.y) <= 2
+  );
+}
+
+function isProtected(piece: Piece, pieces: Piece[]): boolean {
+  // 简化实现：检查是否有友方棋子保护
+  return pieces.some(p => 
+    p.color === piece.color && 
+    p.id !== piece.id &&
+    Math.abs(p.position.x - piece.position.x) + Math.abs(p.position.y - piece.position.y) <= 2
+  );
+}
+
+function getChariotCannonCoordination(pieces: Piece[], currentTurn: PieceColor): number {
+  // 简化实现：检查车炮是否在同一条线上
+  const chariots = pieces.filter(p => p.type === PieceType.CHARIOT && p.color === currentTurn);
+  const cannons = pieces.filter(p => p.type === PieceType.CANNON && p.color === currentTurn);
+  
+  let score = 0;
+  // 检查车炮是否在同一条线上
+  for (const chariot of chariots) {
+    for (const cannon of cannons) {
+      if (chariot.position.x === cannon.position.x || chariot.position.y === cannon.position.y) {
+        score += 5;
+      }
+    }
+  }
+  return score;
+}
+
+function getHorseElephantCoordination(pieces: Piece[], currentTurn: PieceColor): number {
+  // 简化实现：检查马象配合
+  const horses = pieces.filter(p => p.type === PieceType.HORSE && p.color === currentTurn);
+  const elephants = pieces.filter(p => p.type === PieceType.ELEPHANT && p.color === currentTurn);
+  
+  let score = 0;
+  // 检查马象是否形成保护网
+  for (const horse of horses) {
+    for (const elephant of elephants) {
+      if (Math.abs(horse.position.x - elephant.position.x) <= 2 && 
+          Math.abs(horse.position.y - elephant.position.y) <= 2) {
+        score += 3;
+      }
+    }
+  }
+  return score;
+}
+
+function getLineControl(pieces: Piece[], x: number, currentTurn: PieceColor): number {
+  // 简化实现：计算线路控制
+  const currentPieces = pieces.filter(p => p.position.x === x && p.color === currentTurn);
+  const enemyPieces = pieces.filter(p => p.position.x === x && p.color !== currentTurn);
+  return currentPieces.length - enemyPieces.length;
+}

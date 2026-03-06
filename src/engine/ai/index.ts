@@ -1,5 +1,5 @@
-import { Piece, PieceColor, Move, DifficultyLevel, AIEvaluation, GameStatus } from '../../types';
-import { getValidMoves, executeMove, isCheck, getGameStatus } from '../rules';
+import { Piece, PieceColor, Move, DifficultyLevel, AIEvaluation, PieceType } from '../../types';
+import { PIECE_VALUES, executeMove, getAllLegalMoves } from '../rules';
 import { getEvaluationFunction, getSearchDepth, getTimeLimit } from '../evaluation';
 
 // AI引擎接口
@@ -29,47 +29,24 @@ abstract class BaseAIEngine implements AIEngine {
   }
 
   protected getAllPossibleMoves(pieces: Piece[], currentTurn: PieceColor): Move[] {
-    const moves: Move[] = [];
-    const currentPieces = pieces.filter(p => p.color === currentTurn);
-
-    for (const piece of currentPieces) {
-      const validPositions = getValidMoves(piece, pieces);
-      for (const position of validPositions) {
-        const capturedPiece = pieces.find(p => 
-          p.position.x === position.x && p.position.y === position.y
-        );
-        
-        moves.push({
-          from: piece.position,
-          to: position,
-          piece,
-          captured: capturedPiece || undefined
-        });
-      }
-    }
-
-    return moves;
+    return getAllLegalMoves(pieces, currentTurn);
   }
+}
 
-  protected isMoveValid(move: Move, pieces: Piece[], currentTurn: PieceColor): boolean {
-    // 执行移动
-    const newPieces = executeMove(move, pieces);
-    
-    // 检查是否会导致自己被将军
-    return !isCheck(newPieces, currentTurn);
-  }
+function getOpponentColor(color: PieceColor): PieceColor {
+  return color === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
+}
 
-  protected filterValidMoves(moves: Move[], pieces: Piece[], currentTurn: PieceColor): Move[] {
-    return moves.filter(move => this.isMoveValid(move, pieces, currentTurn));
-  }
+function getMateScore(sideToMove: PieceColor, rootColor: PieceColor, depth: number): number {
+  const base = 1_000_000 + depth;
+  return sideToMove === rootColor ? -base : base;
 }
 
 // Level 1 AI: 随机走子
 export class Level1AI extends BaseAIEngine {
   async findBestMove(pieces: Piece[], currentTurn: PieceColor): Promise<AIEvaluation> {
     const startTime = Date.now();
-    const moves = this.getAllPossibleMoves(pieces, currentTurn);
-    const validMoves = this.filterValidMoves(moves, pieces, currentTurn);
+    const validMoves = this.getAllPossibleMoves(pieces, currentTurn);
 
     if (validMoves.length === 0) {
       return {
@@ -99,9 +76,8 @@ export class Level1AI extends BaseAIEngine {
 export class Level2AI extends BaseAIEngine {
   async findBestMove(pieces: Piece[], currentTurn: PieceColor): Promise<AIEvaluation> {
     const startTime = Date.now();
-    const moves = this.getAllPossibleMoves(pieces, currentTurn);
-    const validMoves = this.filterValidMoves(moves, pieces, currentTurn);
-
+    const validMoves = this.getAllPossibleMoves(pieces, currentTurn);
+    
     if (validMoves.length === 0) {
       return {
         score: -Infinity,
@@ -118,14 +94,12 @@ export class Level2AI extends BaseAIEngine {
 
     let bestMove: Move;
     if (captureMoves.length > 0) {
-      // 选择吃价值最高的棋子的移动
       bestMove = captureMoves.reduce((best, current) => {
         const bestValue = best.captured ? getPieceValue(best.captured.type) : 0;
         const currentValue = current.captured ? getPieceValue(current.captured.type) : 0;
         return currentValue > bestValue ? current : best;
       });
     } else {
-      // 随机选择非吃子移动
       bestMove = nonCaptureMoves[Math.floor(Math.random() * nonCaptureMoves.length)];
     }
 
@@ -145,8 +119,7 @@ export class Level2AI extends BaseAIEngine {
 export class MinimaxAI extends BaseAIEngine {
   async findBestMove(pieces: Piece[], currentTurn: PieceColor): Promise<AIEvaluation> {
     const startTime = Date.now();
-    const moves = this.getAllPossibleMoves(pieces, currentTurn);
-    const validMoves = this.filterValidMoves(moves, pieces, currentTurn);
+    const validMoves = this.getAllPossibleMoves(pieces, currentTurn);
 
     if (validMoves.length === 0) {
       return {
@@ -167,8 +140,8 @@ export class MinimaxAI extends BaseAIEngine {
       const newPieces = executeMove(move, pieces);
       const score = this.minimax(
         newPieces, 
-        this.maxDepth - 1, 
-        false, 
+        getOpponentColor(currentTurn),
+        this.maxDepth - 1,
         currentTurn,
         -Infinity,
         Infinity,
@@ -200,40 +173,38 @@ export class MinimaxAI extends BaseAIEngine {
 
   private minimax(
     pieces: Piece[], 
-    depth: number, 
-    isMaximizing: boolean, 
-    currentTurn: PieceColor,
+    sideToMove: PieceColor,
+    depth: number,
+    rootColor: PieceColor,
     alpha: number,
     beta: number,
     startTime: number,
     timeLimit: number
   ): number {
-    // 检查时间限制
     if (Date.now() - startTime > timeLimit) {
-      return 0;
+      return this.evaluationFunction(pieces, rootColor);
     }
 
-    // 检查游戏是否结束
-    const gameStatus = getGameStatus(pieces, currentTurn);
-    if (gameStatus === GameStatus.CHECKMATE) {
-      return isMaximizing ? -Infinity : Infinity;
-    }
-    if (gameStatus === GameStatus.STALEMATE || depth === 0) {
-      return this.evaluationFunction(pieces, currentTurn);
+    if (depth === 0) {
+      return this.evaluationFunction(pieces, rootColor);
     }
 
+    const legalMoves = this.getAllPossibleMoves(pieces, sideToMove);
+    if (legalMoves.length === 0) {
+      return getMateScore(sideToMove, rootColor, depth);
+    }
+
+    const isMaximizing = sideToMove === rootColor;
     if (isMaximizing) {
       let maxScore = -Infinity;
-      const moves = this.getAllPossibleMoves(pieces, currentTurn);
-      const validMoves = this.filterValidMoves(moves, pieces, currentTurn);
 
-      for (const move of validMoves) {
+      for (const move of legalMoves) {
         const newPieces = executeMove(move, pieces);
         const score = this.minimax(
           newPieces, 
-          depth - 1, 
-          false, 
-          currentTurn,
+          getOpponentColor(sideToMove),
+          depth - 1,
+          rootColor,
           alpha,
           beta,
           startTime,
@@ -251,18 +222,14 @@ export class MinimaxAI extends BaseAIEngine {
       return maxScore;
     } else {
       let minScore = Infinity;
-      const moves = this.getAllPossibleMoves(pieces, pieces[0]?.color === currentTurn ? 
-        (currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED) : currentTurn);
-      const validMoves = this.filterValidMoves(moves, pieces, pieces[0]?.color === currentTurn ? 
-        (currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED) : currentTurn);
 
-      for (const move of validMoves) {
+      for (const move of legalMoves) {
         const newPieces = executeMove(move, pieces);
         const score = this.minimax(
           newPieces, 
-          depth - 1, 
-          true, 
-          currentTurn,
+          getOpponentColor(sideToMove),
+          depth - 1,
+          rootColor,
           alpha,
           beta,
           startTime,
@@ -304,16 +271,6 @@ export function createAI(difficulty: DifficultyLevel): AIEngine {
 }
 
 // 辅助函数：获取棋子价值
-function getPieceValue(pieceType: string): number {
-  const valueMap: Record<string, number> = {
-    'general': 10000,
-    'advisor': 20,
-    'elephant': 20,
-    'horse': 40,
-    'chariot': 90,
-    'cannon': 45,
-    'soldier': 10
-  };
-  
-  return valueMap[pieceType] || 0;
+function getPieceValue(pieceType: PieceType): number {
+  return PIECE_VALUES[pieceType];
 } 

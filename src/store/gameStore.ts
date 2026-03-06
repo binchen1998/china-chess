@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { Piece, PieceType, PieceColor, Position, Move, GameStatus, DifficultyLevel, GameMode, GameConfig, GameHistory } from '../types';
-import { getValidMoves, executeMove, getGameStatus } from '../engine/rules';
+import { Piece, PieceType, PieceColor, Position, Move, GameStatus, DifficultyLevel, GameMode, GameConfig, GameHistory, AIEvaluation } from '../types';
+import { getAllLegalMoves, getValidMoves, executeMove, getGameStatus } from '../engine/rules';
 import { createAI } from '../engine/ai';
 
 interface GameStore {
@@ -12,6 +12,7 @@ interface GameStore {
   validMoves: Position[];
   history: GameHistory;
   config: GameConfig;
+  isAIComputing: boolean;
   
   // 游戏控制
   startNewGame: (config: GameConfig) => void;
@@ -77,6 +78,21 @@ function createInitialBoard(): Piece[] {
   return pieces;
 }
 
+// 后备移动函数（当AI计算失败时使用）
+function getFallbackMove(pieces: Piece[], currentTurn: PieceColor): Move | null {
+  const legalMoves = getAllLegalMoves(pieces, currentTurn);
+  if (legalMoves.length === 0) return null;
+  return legalMoves[Math.floor(Math.random() * legalMoves.length)];
+}
+
+function getWinnerByStatus(status: GameStatus, sideToMove: PieceColor): PieceColor | undefined {
+  if (status !== GameStatus.CHECKMATE && status !== GameStatus.STALEMATE) {
+    return undefined;
+  }
+
+  return sideToMove === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
+}
+
 // 创建游戏历史
 function createGameHistory(): GameHistory {
   return {
@@ -104,6 +120,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   validMoves: [],
   history: createGameHistory(),
   config: createDefaultConfig(),
+  isAIComputing: false,
 
   // 游戏控制
   startNewGame: (config: GameConfig) => {
@@ -117,7 +134,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       selectedPiece: null,
       validMoves: [],
       history: createGameHistory(),
-      config
+      config,
+      isAIComputing: false
     });
   },
 
@@ -149,8 +167,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     };
 
     const newPieces = executeMove(move, pieces);
-    const newStatus = getGameStatus(newPieces, currentTurn);
     const nextTurn = currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
+    const newStatus = getGameStatus(newPieces, nextTurn);
 
     // 更新历史
     const newHistory = { ...get().history };
@@ -158,7 +176,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (newStatus !== GameStatus.PLAYING) {
       newHistory.endTime = new Date();
       newHistory.status = newStatus;
-      newHistory.winner = newStatus === GameStatus.CHECKMATE ? nextTurn : undefined;
+      newHistory.winner = getWinnerByStatus(newStatus, nextTurn);
     }
 
     set({
@@ -195,87 +213,105 @@ export const useGameStore = create<GameStore>((set, get) => ({
       status: initialStatus,
       selectedPiece: null,
       validMoves: [],
-      history: createGameHistory()
+      history: createGameHistory(),
+      isAIComputing: false
     });
   },
 
   // 强制更新游戏状态
   forceUpdateStatus: () => {
     const { pieces, currentTurn } = get();
-    
-    // 检查当前回合方是否被将死
-    const currentPlayerStatus = getGameStatus(pieces, currentTurn);
-    
-    // 如果当前玩家被将死，更新状态
-    if (currentPlayerStatus === GameStatus.CHECKMATE) {
-      console.log('强制更新游戏状态: 检测到将死 -> CHECKMATE');
-      set({ status: GameStatus.CHECKMATE });
-      return;
-    }
-    
-    // 检查对方是否被将死
-    const oppositeColor = currentTurn === PieceColor.RED ? PieceColor.BLACK : PieceColor.RED;
-    const oppositeStatus = getGameStatus(pieces, oppositeColor);
-    
-    if (oppositeStatus === GameStatus.CHECKMATE) {
-      console.log('强制更新游戏状态: 检测到对方将死 -> CHECKMATE');
-      set({ status: GameStatus.CHECKMATE });
-      return;
-    }
-    
-    // 检查其他状态
+
     const newStatus = getGameStatus(pieces, currentTurn);
     if (newStatus !== get().status) {
-      console.log('强制更新游戏状态:', get().status, '->', newStatus);
       set({ status: newStatus });
     }
   },
 
   // AI相关
   makeAIMove: async () => {
-    const { pieces, currentTurn, config, status } = get();
+    const { pieces, currentTurn, config, status, isAIComputing } = get();
     
-    if (status !== GameStatus.PLAYING || 
+    if (isAIComputing ||
+        status === GameStatus.CHECKMATE || 
+        status === GameStatus.STALEMATE ||
+        status === GameStatus.DRAW ||
         config.mode !== GameMode.HUMAN_VS_AI || 
         currentTurn !== PieceColor.BLACK) {
       return;
     }
 
-    const ai = createAI(config.difficulty);
-    const evaluation = await ai.findBestMove(pieces, currentTurn);
-    
-    if (evaluation.bestMove) {
-      // AI需要先选中棋子，然后执行移动
-      const pieceToMove = pieces.find(p => 
-        p.position.x === evaluation.bestMove!.from.x && 
-        p.position.y === evaluation.bestMove!.from.y
-      );
+    set({ isAIComputing: true });
+
+    try {
+      // 使用setTimeout来避免阻塞主线程，让UI有时间更新
+      const evaluation = await new Promise<AIEvaluation>((resolve) => {
+        setTimeout(() => {
+          // 使用现有的AI逻辑，但用setTimeout避免阻塞
+          const ai = createAI(config.difficulty);
+          const result = ai.findBestMove(pieces, currentTurn);
+          resolve(result);
+        }, 0);
+      });
       
-      if (pieceToMove) {
-        // 直接执行AI移动，不需要先选中
-        const capturedPiece = pieces.find(p => 
-          p.position.x === evaluation.bestMove!.to.x && 
-          p.position.y === evaluation.bestMove!.to.y
+      if (evaluation.bestMove) {
+        const pieceToMove = pieces.find(p => 
+          p.position.x === evaluation.bestMove!.from.x && 
+          p.position.y === evaluation.bestMove!.from.y
         );
         
-        const move: Move = {
-          from: evaluation.bestMove!.from,
-          to: evaluation.bestMove!.to,
-          piece: pieceToMove,
-          captured: capturedPiece || undefined
-        };
+        if (pieceToMove) {
+          const capturedPiece = pieces.find(p => 
+            p.position.x === evaluation.bestMove!.to.x && 
+            p.position.y === evaluation.bestMove!.to.y
+          );
+          
+          const move: Move = {
+            from: evaluation.bestMove!.from,
+            to: evaluation.bestMove!.to,
+            piece: pieceToMove,
+            captured: capturedPiece || undefined
+          };
 
-        const newPieces = executeMove(move, pieces);
-        const newStatus = getGameStatus(newPieces, currentTurn);
-        const nextTurn = PieceColor.RED; // AI走子后，轮到红方
+          const newPieces = executeMove(move, pieces);
+          const nextTurn = PieceColor.RED; // AI走子后，轮到红方
+          const newStatus = getGameStatus(newPieces, nextTurn);
 
-        // 更新历史
+          // 更新历史
+          const newHistory = { ...get().history };
+          newHistory.moves.push(move);
+          if (newStatus !== GameStatus.PLAYING) {
+            newHistory.endTime = new Date();
+            newHistory.status = newStatus;
+            newHistory.winner = getWinnerByStatus(newStatus, nextTurn);
+          }
+
+          set({
+            pieces: newPieces,
+            currentTurn: nextTurn,
+            status: newStatus,
+            selectedPiece: null,
+            validMoves: [],
+            history: newHistory,
+            isAIComputing: false
+          });
+        }
+      } else {
+        set({ status: getGameStatus(pieces, currentTurn), isAIComputing: false });
+      }
+    } catch (error) {
+      console.error('AI计算错误:', error);
+      const fallbackMove = getFallbackMove(pieces, currentTurn);
+      if (fallbackMove) {
+        const newPieces = executeMove(fallbackMove, pieces);
+        const nextTurn = PieceColor.RED;
+        const newStatus = getGameStatus(newPieces, nextTurn);
         const newHistory = { ...get().history };
-        newHistory.moves.push(move);
+        newHistory.moves.push(fallbackMove);
         if (newStatus !== GameStatus.PLAYING) {
           newHistory.endTime = new Date();
           newHistory.status = newStatus;
-          newHistory.winner = newStatus === GameStatus.CHECKMATE ? nextTurn : undefined;
+          newHistory.winner = getWinnerByStatus(newStatus, nextTurn);
         }
 
         set({
@@ -284,8 +320,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           status: newStatus,
           selectedPiece: null,
           validMoves: [],
-          history: newHistory
+          history: newHistory,
+          isAIComputing: false
         });
+      } else {
+        set({ status: getGameStatus(pieces, currentTurn), isAIComputing: false });
       }
     }
   },
