@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { PieceColor, GameStatus, DifficultyLevel, GameMode } from '../types';
 import Board from './Board';
 import Piece from './Piece';
 import { BOARD_MARGIN, MIN_CELL_SIZE, MAX_CELL_SIZE, DEFAULT_CELL_SIZE } from '../constants/board';
-import { debugCheckStatus, getGameStatus, isCheck } from '../engine/rules';
+import { getGameStatus } from '../engine/rules';
 
 const Game: React.FC = () => {
   const {
@@ -73,15 +73,6 @@ const Game: React.FC = () => {
       forceUpdateStatus();
     }
   }, [pieces, currentTurn, status, forceUpdateStatus]);
-
-  const debugData = useMemo(() => ({
-    redCheck: isCheck(pieces, PieceColor.RED),
-    blackCheck: isCheck(pieces, PieceColor.BLACK),
-    redStatus: getGameStatus(pieces, PieceColor.RED),
-    blackStatus: getGameStatus(pieces, PieceColor.BLACK),
-    redDebug: debugCheckStatus(pieces, PieceColor.RED),
-    blackDebug: debugCheckStatus(pieces, PieceColor.BLACK),
-  }), [pieces]);
 
   // 处理棋子点击
   const handlePieceClick = (piece: any) => {
@@ -302,55 +293,6 @@ const Game: React.FC = () => {
           </div>
         </div>
 
-        {/* 调试信息 */}
-        <div className="debug-info" style={{ marginTop: '20px', padding: '15px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '8px', fontSize: '12px' }}>
-          <div><strong>调试信息:</strong></div>
-          <div>当前状态: {status}</div>
-          <div>当前回合: {currentTurn === PieceColor.RED ? '红方' : '黑方'}</div>
-          <div>红方将军: {debugData.redCheck ? '是' : '否'}</div>
-          <div>黑方将军: {debugData.blackCheck ? '是' : '否'}</div>
-          
-          {/* 强制状态检查 */}
-          <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '10px' }}>
-            <div><strong>强制状态检查:</strong></div>
-            <div>红方状态: {debugData.redStatus}</div>
-            <div>黑方状态: {debugData.blackStatus}</div>
-            <button 
-              onClick={() => {
-                const blackStatus = getGameStatus(pieces, PieceColor.BLACK);
-                if (blackStatus === GameStatus.CHECKMATE || blackStatus === GameStatus.STALEMATE) {
-                  console.log('黑方已进入终局，强制更新游戏状态');
-                  forceUpdateStatus();
-                }
-              }}
-              style={{ 
-                padding: '5px 10px', 
-                margin: '5px', 
-                fontSize: '10px',
-                background: 'rgba(255,255,255,0.2)',
-                border: '1px solid rgba(255,255,255,0.3)',
-                borderRadius: '4px',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              检查黑方状态
-            </button>
-          </div>
-          
-          {/* 详细将军信息 */}
-          <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '10px' }}>
-            <div><strong>详细将军信息:</strong></div>
-            <div>红方将军详情:</div>
-            {debugData.redDebug.map((info, index) => (
-              <div key={index} style={{ fontSize: '10px', marginLeft: '10px' }}>{info}</div>
-            ))}
-            <div>黑方将军详情:</div>
-            {debugData.blackDebug.map((info, index) => (
-              <div key={index} style={{ fontSize: '10px', marginLeft: '10px' }}>{info}</div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* 难度选择对话框 */}
